@@ -1,0 +1,9 @@
+[package]
+name = "rstgc"
+version = "0.1.0"
+authors = ["Jean-François YUEN <jfyuen@gmail.com>"]
+
+[dependencies]
+clap = "2.32.0"
+slog = "2.4"
+slog-term = "2.4"
