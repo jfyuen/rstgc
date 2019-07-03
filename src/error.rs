@@ -1,5 +1,6 @@
 use std::error;
 use std::fmt;
+extern crate bincode;
 
 pub type Result<T> = std::result::Result<T, TgcError>;
 
@@ -8,6 +9,7 @@ pub enum TgcError {
     ThreadError(std::boxed::Box<dyn std::any::Any + std::marker::Send>),
     ChanReceiveError(std::sync::mpsc::RecvError),
     IOError(std::io::Error),
+    SerializeError(std::boxed::Box<bincode::ErrorKind>),
 }
 
 impl fmt::Display for TgcError {
@@ -16,6 +18,7 @@ impl fmt::Display for TgcError {
             TgcError::ThreadError(_) => write!(f, "thread error"),
             TgcError::ChanReceiveError(ref e) => write!(f, "chan receive error: {}", e),
             TgcError::IOError(ref e) => write!(f, "io error: {}", e),
+            TgcError::SerializeError(ref e) => write!(f, "serialize error: {}", e),
         }
     }
 }
@@ -26,6 +29,7 @@ impl error::Error for TgcError {
             TgcError::ThreadError(_) => "thread error", // todo: better error message
             TgcError::ChanReceiveError(e) => e.description(),
             TgcError::IOError(e) => e.description(),
+            TgcError::SerializeError(e) => e.description(),
         }
     }
 
@@ -34,7 +38,15 @@ impl error::Error for TgcError {
             TgcError::ThreadError(_e) => None,
             TgcError::ChanReceiveError(e) => e.cause(),
             TgcError::IOError(e) => e.cause(),
+            TgcError::SerializeError(e) => e.cause(),
         }
+    }
+}
+
+
+impl From<std::boxed::Box<bincode::ErrorKind>> for TgcError {
+    fn from(err: std::boxed::Box<bincode::ErrorKind>) -> TgcError {
+        TgcError::SerializeError(err)
     }
 }
 

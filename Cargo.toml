@@ -7,3 +7,6 @@ authors = ["Jean-François YUEN <jfyuen@gmail.com>"]
 clap = "2.32.0"
 slog = "2.4"
 slog-term = "2.4"
+bincode = "1.1.4"
+serde_derive = "1.0.91"
+serde = "1.0.91"

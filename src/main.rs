@@ -1,6 +1,10 @@
 extern crate clap;
 extern crate slog;
 extern crate slog_term;
+extern crate bincode;
+#[macro_use]
+extern crate serde_derive;
+extern crate serde;
 use clap::App;
 use clap::Arg;
 use clap::SubCommand;
@@ -15,6 +19,7 @@ use std::thread;
 
 mod error;
 
+#[derive(Serialize, Deserialize)]
 struct Message {
     content: Vec<u8>,
     eof: bool,
@@ -59,19 +64,14 @@ fn receive_remote_data(
     loop {
         let n = reader.read(&mut buffer)?;
         let eof = n == 0;
-        let content = &buffer[..n];
-        let msg = Message {
-            // TODO: message should be serialized
-            content: content.to_vec(),
-            eof,
-        };
-        tx.send(msg).unwrap();
+        let msg: Message = bincode::deserialize(&buffer[..n])?;
         info!(
             logger,
             "received from network on {}: {}",
             addr,
-            String::from_utf8_lossy(content)
+            String::from_utf8_lossy(&msg.content)
         );
+        tx.send(msg).unwrap();
         if eof {
             break;
         }
@@ -93,7 +93,8 @@ fn send_remote_data(
             addr,
             String::from_utf8_lossy(&msg.content)
         );
-        let n = writer.write(&msg.content[..])?; // TODO: serialize msg
+        let serialized = bincode::serialize(&msg)?;
+        let n = writer.write(&serialized)?; 
         info!(logger, "wrote to stream {}: {} bytes", addr, n);
         writer.flush()?;
         if msg.eof {
@@ -113,7 +114,7 @@ fn listen_remote_client(
     tx: &Sender<Message>
 ) -> error::Result<()> {
     let listener = TcpListener::bind(addr.as_ref())?;
-    debug!(logger, "listening started, ready to accept");
+    debug!(logger, "listening on {}", &addr);
 
     for stream in listener.incoming() {
         let logger1 = logger.clone();
@@ -131,10 +132,8 @@ fn listen_remote_client(
             let send_stream = Box::new(stream.try_clone()?);
             if let Err(e) = send_remote_data(send_stream, &addr, &logger, &rx) {
                 stream.shutdown(Shutdown::Both)?;
-                // stream.shutdown(Shutdown::Write)?;
                 error!(logger, "received error from on {}: {}", addr, e);
                 h.join()?;
-                // return Err(e);
                 break;
             }
         }
@@ -194,10 +193,8 @@ fn listen_local_client(
             let send_stream = Box::new(stream.try_clone()?);
             if let Err(e) = send_local_data(send_stream, &addr, &logger, &rx) {
                 stream.shutdown(Shutdown::Both)?;
-                // stream.shutdown(Shutdown::Write)?;
                 error!(logger, "received error from on {}: {}", addr, e);
                 h.join()?;
-                // return Err(e);
                 break;
             }
         }
@@ -209,28 +206,28 @@ fn listen_local_client(
 fn run_listen_server(logger: &Logger, client_addr: &str, connect_addr: &str) -> error::Result<()> {
     let (tx1, rx1): (Sender<Message>, Receiver<Message>) = mpsc::channel();
     let (tx2, rx2): (Sender<Message>, Receiver<Message>) = mpsc::channel();
-    let client_addr = Arc::new(String::from(client_addr));
+    let connect_addr = Arc::new(String::from(connect_addr));
     let logger1 = logger.clone();
     let handle1 = thread::spawn(move || loop {
-        match listen_remote_client(&logger1, &client_addr.clone(), &rx1, &tx2) {
+        match listen_remote_client(&logger1, &connect_addr.clone(), &rx1, &tx2) {
             Ok(_) => {
-                info!(logger1, "ok {}", client_addr);
+                info!(logger1, "ok {}", connect_addr);
             }
             Err(e) => {
-                error!(logger1, "received connection error: {} {}", client_addr, e);
+                error!(logger1, "received connection error: {} {}", connect_addr, e);
             }
         }
     });
-    let connect_addr = Arc::new(String::from(connect_addr));
+    let client_addr = Arc::new(String::from(client_addr));
 
     let logger2 = logger.clone();
     let handle2 = thread::spawn(move || loop {
-        match listen_local_client(&logger2, &connect_addr.clone(), &tx1, &rx2) {
+        match listen_local_client(&logger2, &client_addr.clone(), &tx1, &rx2) {
             Ok(_) => {
-                info!(logger2, "ok {}", connect_addr);
+                info!(logger2, "ok {}", client_addr);
             }
             Err(e) => {
-                error!(logger2, "received connection error {}: {}", connect_addr, e);
+                error!(logger2, "received connection error {}: {}", client_addr, e);
             }
         }
     });
@@ -268,7 +265,6 @@ fn connect_remote_server(
             let send_stream = Box::new(stream.try_clone()?);
             if let Err(e) = send_remote_data(send_stream, &addr, &logger, &rx) {
                 stream.shutdown(Shutdown::Both)?;
-                // stream.shutdown(Shutdown::Write)?;
                 error!(logger, "received error from on {}: {}", addr, e);
                 h.join()?;
                 // return Err(e);
