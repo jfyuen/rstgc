@@ -43,7 +43,6 @@ impl error::Error for TgcError {
     }
 }
 
-
 impl From<std::boxed::Box<bincode::ErrorKind>> for TgcError {
     fn from(err: std::boxed::Box<bincode::ErrorKind>) -> TgcError {
         TgcError::SerializeError(err)
