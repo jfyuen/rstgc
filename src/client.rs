@@ -31,13 +31,13 @@ fn connect_remote_server(
 
         let recv_stream = Box::new(stream.try_clone()?);
         let h = thread::spawn(move || {
-            if let Err(e) = message::receive_remote_data(recv_stream, &addr1, &logger1, &tx) {
+            if let Err(e) = message::receive_data(recv_stream, &addr1, &logger1, &tx, true) {
                 error!(logger1, "received error from on {}: {}", addr1, e);
             }
         });
         loop {
             let send_stream = Box::new(stream.try_clone()?);
-            if let Err(e) = message::send_remote_data(send_stream, &addr, &logger, &rx) {
+            if let Err(e) = message::send_data(send_stream, &addr, &logger, &rx, true) {
                 stream.shutdown(Shutdown::Both)?;
                 error!(logger, "received error from on {}: {}", addr, e);
                 h.join()?;
@@ -69,13 +69,13 @@ fn connect_local_server(
 
         let recv_stream = Box::new(stream.try_clone()?);
         let h = thread::spawn(move || {
-            if let Err(e) = message::receive_local_data(recv_stream, &addr1, &logger1, &tx) {
+            if let Err(e) = message::receive_data(recv_stream, &addr1, &logger1, &tx, false) {
                 error!(logger1, "received error from on {}: {}", addr1, e);
             }
         });
         loop {
             let send_stream = Box::new(stream.try_clone()?);
-            if let Err(e) = message::send_local_data(send_stream, &addr, &logger, &rx) {
+            if let Err(e) = message::send_data(send_stream, &addr, &logger, &rx, false) {
                 stream.shutdown(Shutdown::Both)?;
                 // stream.shutdown(Shutdown::Write)?;
                 error!(logger, "received error from on {}: {}", addr, e);
