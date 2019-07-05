@@ -2,12 +2,15 @@ extern crate bincode;
 extern crate serde;
 extern crate slog;
 extern crate slog_term;
+use error;
+use slog::error;
 use slog::{info, Logger};
 use std::io::Read;
 use std::io::Write;
+use std::net::{Shutdown, TcpStream};
 use std::sync::mpsc::{Receiver, Sender};
-
-use error;
+use std::sync::Arc;
+use std::thread;
 
 #[derive(Serialize, Deserialize)]
 pub struct Message {
@@ -74,6 +77,65 @@ pub fn receive_data(
         );
         tx.send(msg).unwrap();
         if eof {
+            break;
+        }
+    }
+    Ok(())
+}
+
+pub fn handle_local_stream(
+    logger: &Logger,
+    addr: &Arc<String>,
+    tx: &Sender<Message>,
+    rx: &Receiver<Message>,
+    stream: TcpStream,
+) -> error::Result<()> {
+    let logger1 = logger.clone();
+
+    let tx = tx.clone();
+    let addr1 = addr.clone();
+
+    let recv_stream = Box::new(stream.try_clone()?);
+    let h = thread::spawn(move || {
+        if let Err(e) = receive_data(recv_stream, &addr1, &logger1, &tx, false) {
+            error!(logger1, "received error from on {}: {}", addr1, e);
+        }
+    });
+    loop {
+        let send_stream = Box::new(stream.try_clone()?);
+        if let Err(e) = send_data(send_stream, &addr, &logger, &rx, false) {
+            stream.shutdown(Shutdown::Both)?;
+            error!(logger, "received error from on {}: {}", addr, e);
+            h.join()?;
+            break;
+        }
+    }
+    Ok(())
+}
+
+pub fn handle_remote_stream(
+    logger: &Logger,
+    addr: &Arc<String>,
+    tx: &Sender<Message>,
+    rx: &Receiver<Message>,
+    stream: TcpStream,
+) -> error::Result<()> {
+    let logger1 = logger.clone();
+    let tx = tx.clone();
+    let addr1 = addr.clone();
+
+    let recv_stream = Box::new(stream.try_clone()?);
+    let h = thread::spawn(move || {
+        if let Err(e) = receive_data(recv_stream, &addr1, &logger1, &tx, true) {
+            error!(logger1, "received error from on {}: {}", addr1, e);
+        }
+    });
+    loop {
+        let send_stream = Box::new(stream.try_clone()?);
+        if let Err(e) = send_data(send_stream, &addr, &logger, &rx, true) {
+            stream.shutdown(Shutdown::Both)?;
+            error!(logger, "received error from on {}: {}", addr, e);
+            h.join()?;
             break;
         }
     }
